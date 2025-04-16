@@ -8,8 +8,9 @@ from matAlignLib import matrix_compl
 from runhmmer import runhmmer3, getdescs
 import numpy as np
 import pickle, os
+from gibbsAlign_GLM import *
 
-DOMAIN_TYPE = 'zf-C2H2'  # Set to either 'zf-C2H2' or 'homeodomain'
+DOMAIN_TYPE = 'TetR'  # Set to either 'zf-C2H2' or 'homeodomain'
 OBS_GRPS = 'grpIDcore'
 
 if DOMAIN_TYPE == 'zf-C2H2':
@@ -35,6 +36,21 @@ elif DOMAIN_TYPE == 'homeodomain':
     EXCLUDE_TEST = False
     RIGHT_OLAP = 0     # No domain base overlap for single-domain proteins
     DOMAIN_ORDER = 1   # Standard domain ordering since only 1 domain per protein
+elif DOMAIN_TYPE == 'TetR':
+    PROT_SEQ_FILE = '../precomputedInputs/proteins_TetR.fa'  # Input protein sequence fasta file
+    PWM_INPUT_TABLE = '../precomputedInputs/pwmTab_TetR.txt'   # A table of PWMs corresponding to prots in PROT_SEQ_FILE
+    CONTACT_MAP = '../precomputedInputs/TetR_contactMap.txt'  # A contact map for the domain family
+    MWID = 6
+    HMM_FILE = '../pfamHMMs/TetR.hmm'    # Location of hmm file
+    HMM_LEN = 47                             # Number of match states in HMM file
+    HMM_NAME = 'TetR_N'                    # A name for the HMM
+    HMM_OFFSET = 0                           # Used to offset HMM states to canonical numbering scheme for Homoedomains
+    HMMER_HOME = '/projects/jt11/mgh6/.conda/envs/meme/bin/'
+    EXCLUDE_TEST = False
+    RIGHT_OLAP = 0     # No domain base overlap for single-domain proteins
+    DOMAIN_ORDER = 1   # Standard domain ordering since only 1 domain per protein
+
+
 
 # Used by various functions - do not change these
 BASE = ['A','C','G','T']
@@ -96,7 +112,7 @@ def assignObsGrps(core, by = 'grpIDcore'):
             grps[k] = [k]
     elif by == 'grpIDcore':
         for k in core.keys():
-            if not grps.has_key(core[k]):
+            if core[k] not in list(grps.keys()):
                 grps[core[k]] = [k]
             else:
                 grps[core[k]].append(k)
@@ -200,9 +216,9 @@ def formGLM_fullX(core, edges, uniqueProteins, obsGrps, numAAs = 19, domainOrder
                 nCores = len(core[p])/coreLen
                 # Add X vectors for domains in reverse order for ZFs
                 if domainOrder == -1:
-                    cRange = range(nCores-1,-1,-1)
+                    cRange = range(int(nCores-1,-1,-1))
                 else:
-                    cRange = range(nCores)
+                    cRange = range(int(nCores))
                 for c in cRange:
                     core_seq = core[p][coreLen*c:coreLen*(c+1)]
                     x = []
@@ -233,7 +249,7 @@ def formGLM_testX(X, startInd, endInd, modelType = 'classifier'):
 
     if modelType == 'classifier':
         testX = {}
-        for j in range(MWID):
+        for j in range(int(MWID)):
             testX[j] = X[j][startInd:(endInd+1),]
     return testX  
 
@@ -247,7 +263,7 @@ def createGLMModel(trainX, trainY, trainW):
     model: a dictionary of {base position: GLM model}
     """
     model = {}
-    for j in range(MWID):
+    for j in range(int(MWID)):
         #clf = LogisticRegression(fit_intercept=True, random_state=0, multi_class='multinomial', solver='newton-cg')
         clf = LogisticRegression(fit_intercept=True, random_state=0, 
                                  multi_class='multinomial', solver='newton-cg', 
@@ -262,8 +278,8 @@ def formGLM_Y(keysToUse, nDoms):
     :return: an array of repeated [0,1,2,3]. And note that len(Y)/4 is the number of proteins used.
     """
     Y = {}
-    for j in range(MWID):
-        Y[j] = np.array([0,1,2,3] * np.sum([nDoms[k] for k in keysToUse]))
+    for j in range(int(MWID)):
+        Y[j] = np.array([0,1,2,3] * int(np.sum([nDoms[k] for k in keysToUse])))
     return Y
 
 def formGLM_trainW(pwms, uniqueProteins, nDoms, start, rev, modelType = 'classifier'):
@@ -275,7 +291,7 @@ def formGLM_trainW(pwms, uniqueProteins, nDoms, start, rev, modelType = 'classif
     :param pwms: a dictionary of {"protein": position weight matrix}
     :param uniqueProteins: an array of unique proteins
     :param S: a dictionary {"protein": starting position}
-    :param O: a dictionary {"protein": orientation \in {0,1}}
+    :param O: a dictionary {"protein": orientation in {0,1}}
     :return: W: a dictionary. Each base position j corresponds to an array of weights,
     every four numbers represent one protein's weights.
     """
@@ -289,11 +305,11 @@ def formGLM_trainW(pwms, uniqueProteins, nDoms, start, rev, modelType = 'classif
             pwm = pwms[protein]
         weights[protein] = {}
         # Allows arrayed multi-domain proteins with overlaps
-        for d in range(nDoms[protein]):
-            for j in range(MWID):
+        for d in range(int(nDoms[protein])):
+            for j in range(int(MWID)):
                 #print protein, start[protein], d, j, j+start[protein]+d*(MWID-RIGHT_OLAP), pwm[j+start[protein]+d*(MWID-RIGHT_OLAP)][:]
                 if d == 0:
-                    weights[protein][j] = pwm[j+start[protein]][:]
+                    weights[protein][j] = pwm[j+int(start[protein])][:]
                 else:
                     weights[protein][j] = \
                         np.concatenate((weights[protein][j],
@@ -301,7 +317,7 @@ def formGLM_trainW(pwms, uniqueProteins, nDoms, start, rev, modelType = 'classif
 
     W = {}
     if modelType == 'classifier':
-        for j in range(MWID):
+        for j in range(int(MWID)):
             W[j] = {}
             for i, protein in enumerate(uniqueProteins):
                 W[j] = np.concatenate((W[j], weights[protein][j]), axis=None)
@@ -395,7 +411,7 @@ def getPrecomputedInputs_zfC2H2(rescalePWMs = False, ffsOnly = False, includeB1H
         while line != "":
             lineArr = line.split("\t")
             if verbose:
-                print lineArr
+                print(lineArr)
             if lineArr[0] == ID_field:
                 tf = lineArr[1].rstrip()
             if lineArr[0] == "Pos":
@@ -457,7 +473,7 @@ def getPrecomputedInputs_zfC2H2(rescalePWMs = False, ffsOnly = False, includeB1H
 
         # Normalize the motifs
         for p in pwms.keys():
-            for i in range(len(pwms[p])):
+            for i in range(int(len(pwms[p]))):
                 pwms[p][i] = pwms[p][i]/pwms[p][i].sum()    
         return pwms
 
@@ -565,7 +581,7 @@ def predictSpecificity_array_ZF(fullX, model, startInd, arrayLen, wtB1 = 0.5,
     testX = formGLM_testX(fullX, startInd, (startInd+4*arrayLen)-1)
     #print testX[0].shape
     pwms = {}
-    for i in range(arrayLen):
+    for i in range(int(arrayLen)):
         pwm = []
         for j in range(MWID):
             prediction = model[j].predict_proba(testX[j][i*4:(i+1)*4,])[0].tolist()
@@ -578,7 +594,7 @@ def predictSpecificity_array_ZF(fullX, model, startInd, arrayLen, wtB1 = 0.5,
     # Weighted average for overlapping positions for adjacent domains and concatenate
     #print pwms
     pwm = []
-    for i in range(arrayLen):
+    for i in range(int(arrayLen)):
         if i == 0:
             p = np.array(pwms[i])
             p[MWID-1,:] = (1-wtB1)*p[MWID-RIGHT_OLAP,:] + wtB1*np.array(pwms[i+1][0])

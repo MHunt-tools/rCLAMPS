@@ -97,9 +97,9 @@ def main():
         getTrainPairsAndInfo(rescalePWMs = RESCALE_PWMS, excludeTestSet = EXCLUDE_TEST,
                              addResidues = ADD_RESIDUES)
 
-    print edges
-    print edges_hmmPos
-    print aaPosList
+    print(edges)
+    print(edges_hmmPos)
+    print(aaPosList)
     #print trainCores
 
     obsGrps = assignObsGrps(trainCores, by = OBS_GRPS)
@@ -136,7 +136,7 @@ def main():
                 ll += computeGLMLoglikelihood(testX_dom, testW_dom, model)
             currInd = nextInd
         fout.write('%f\n'%ll)
-        print k, ll
+        print(k, ll)
     fout.close()
 
 if __name__ == '__main__':

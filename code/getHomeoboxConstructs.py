@@ -58,7 +58,7 @@ def mergeDicts(d1, d2, dsetNames = None):
     return d, dset
 
 def subsetDict(d, subset = set()):
-    for k in d.keys():
+    for k in list(d.keys()):
         if k not in subset:
             del d[k]
 

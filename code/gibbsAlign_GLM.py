@@ -21,74 +21,7 @@ from sklearn.linear_model import LogisticRegression
 from scipy import sparse
 import numpy as np
 import time, pickle, argparse, math, multiprocessing
-
-DOMAIN_TYPE = 'zf-C2H2' # Name the domain type (for ease of re-running zf-C2H2 or homeodomain analyses)
-OUTPUT_DIRECTORY = '../my_results/zf-C2H2_250_50_seedFFSdiverse6/'  # Set to any output directory you want
-#DOMAIN_TYPE = 'homeodomain' # Name the domain type (for ease of re-running zf-C2H2 or homeodomain analyses)
-#OUTPUT_DIRECTORY = '../my_results/allHomeodomainProts/'  # Set to any output directory you want
-ORIGINAL_INPUT_FORMAT = False         # Set to True for reproducion of homeodomain manuscript model
-                                     # Set to False to give inputs in format from ../precomputedInputs/ 
-RUN_GIBBS = True                    # Set to False if only want to troubleshoot prior to running Gibbs sampler
-HMMER_HOME = None #'/home/jlwetzel/src/hmmer-3.3.1/src/'
-EXCLUDE_TEST = False   # True if want to exlude 1/2 of Chu proteins for testing .. N/A for ZF testing
-MWID = 4               # Number of base positions in the contact map; set for backward compatibility (6 for homeodomain; 5 for C2H2-ZFs)
-#MWID = 6
-if DOMAIN_TYPE == 'zf-C2H2':
-    RIGHT_OLAP = 1     # Number of 3' bases in contact map overlapping with previous domain instance (if multi-domain) - 1 for zf-C2H2
-    ANCHOR_B1H = False     # Set to true to anchor alignment based on single-finger B1H data for ZFs (Najafabadi, 2015, Nat. Biotech.)
-    ANCHOR_FFS = True      # Set to true to anchor alignment based on fly factor survey for ZFs (Enuameh, 2013, Genome Res.)
-    DIVERSE_ZF_SET = ['bowl','CG31670','ken','ovo','pho','Sp1']  # Set to None to seed with random ZFs instead
-    ANCHOR_SUBSET_SZ = 5  # The number of examples to sample randomly for the anchor subset for ZFs
-else:
-    RIGHT_OLAP = 0     # No domain base overlap for single-domain proteins
-RAND_SEED = 382738375  # Numpy random seed for used for manuscript results
-MAXITER = 50           # Maximum number of iterations per Markov chain
-N_CHAINS = 250         # Number of Markov chains to use
-INIT_ORACLE = False    # Deprecated ... was used to compare to previous Naive Bayes implementation
-SAMPLE = 100           # Integer to multiply PWM columns by when converting to counts
-OBS_GRPS = 'grpIDcore' # Perform group updates based on identical DNA-contacting protein residues
-if EXCLUDE_TEST:
-    SEED_FILE = '../precomputedInputs/fixedStarts_homeodomains_noTest.txt' # Initial seeds based on structures
-else:
-    SEED_FILE = '../precomputedInputs/fixedStarts_homeodomains_all.txt'    # Initial seeds based on structures
-
-if ORIGINAL_INPUT_FORMAT:
-    # Set parameters for adjusting the model topology
-    # (i.e., the binarized contact matrix)
-    CORE_POS = 'useStructInfo'    # Uses the precomputed structural alignments
-    APOS_CUT = 'cutAApos_1.0_0.05'  # Controls AA contact threshold for binarization
-    EDGE_CUT = 'edgeCut_1.0_0.05'   # Controls AA contact threshold for binarization
-    MAX_EDGES_PER_BASE = None       # None means to just ignore this parameter
-    RESCALE_PWMS = True             # True if using PWM rescaling
-else:
-    if DOMAIN_TYPE == 'homeodomain':
-        PROT_SEQ_FILE = '../precomputedInputs/proteins_homeodomains_hasPWM.fa'  # Input protein sequence fasta file
-        PWM_INPUT_TABLE = '../precomputedInputs/pwmTab_homeodomains_all.txt'   # A table of PWMs corresponding to prots in PROT_SEQ_FILE
-        CONTACT_MAP = '../precomputedInputs/homeodomain_contactMap.txt'  # A contact map for the domain family
-        HMM_FILE = '../pfamHMMs/Homeobox.hmm'    # Location of hmm file
-        HMM_LEN = 57                             # Number of match states in HMM file
-        HMM_NAME = 'Homeobox'                    # A name for the HMM
-        HMM_OFFSET = 2                           # Used to offset HMM states to canonical numbering scheme for Homoedomains
-                                                 # Set to zero to use default HMM match state numbers (0-indexed)
-        TEST_PROT_FILE = '../precomputedInputs/testProts_chu2012_randSplit.txt'  # protein/PWM pairs from PROT_SEQ_FILE that are reserved for later testing    
-    elif DOMAIN_TYPE == 'zf-C2H2':
-        PROT_SEQ_FILE = '../precomputedInputs/zf-C2H2/prot_seq_fewZFs_hmmerOut_clusteredOnly_removeTooShort.txt'  # Input protein domain file subsetted to relvant amino acid contacting positions
-        PROT_SEQ_FILE_FFS = '../flyFactorSurvey/enuameh/enuameh_perFinger_processedProtInfo.txt'
-        PWM_INPUT_TABLE = '../precomputedInputs/zf-C2H2/pwmTab_fewZFs_clusteredOnly_removeTooShort.txt'   # A table of PWMs corresponding to prots in PROT_SEQ_FILE
-        PWM_INPUT_FILE_FFS = '../flyFactorSurvey/enuameh/flyfactor_dataset_A.txt'
-        CONTACT_MAP = '../precomputedInputs/zf-C2H2/zf-C2H2_contactMap.txt'  # A contact map for the domain family
-        SEED_FILE = '../flyFactorSurvey/enuameh/enuameh_startPosInfo.txt'    # Initial seeds based on Enuameh et al. 2013
-
-# Used by various functions - do not change these
-BASE = ['A','C','G','T']
-REV_COMPL = {'A':'T','C':'G','G':'C','T':'A'}
-AMINO = ['A','C','D','E','F','G','H','I','K','L',
-         'M','N','P','Q','R','S','T','V','W','Y']
-B2IND = {x: i for i, x in enumerate(BASE)}
-A2IND = {x: i for i, x in enumerate(AMINO)}
-IND2B = {i: x for i, x in enumerate(BASE)}
-IND2A = {i: x for i, x in enumerate(AMINO)}
-COMPL_BASE = {0:3, 1:2, 2:1, 3:0}
+from tqdm import tqdm
 
 # Pass arguments from command line
 parser = argparse.ArgumentParser()
@@ -100,7 +33,76 @@ parser.add_argument("--initoracle",
     action="store_true", default=False)
 parser.add_argument("-s", "--sample",
     type=int, action="store", default=6)
+parser.add_argument("-n", "--chain_num",
+    type=int, action="store", default=None)
 args = parser.parse_args()
+
+## Overwrite matrix_compl to prevent reversing
+allow_rc = False
+if not allow_rc:
+    def matrix_compl(pwm):
+        return pwm
+
+DOMAIN_TYPE = 'TetR' # Name the domain type (for ease of re-running zf-C2H2 or homeodomain analyses)
+OUTPUT_DIRECTORY = '../my_results/tetRProts/' if type(args.chain_num) == type(None) else f'../my_results/tetRProts{args.chain_num}/'  # Set to any output directory you want
+ORIGINAL_INPUT_FORMAT = False         # Set to True for reproducion of homeodomain manuscript model
+                                     # Set to False to give inputs in format from ../precomputedInputs/ 
+RUN_GIBBS = True                    # Set to False if only want to troubleshoot prior to running Gibbs sampler
+HMMER_HOME = '/projects/jt11/mgh6/.conda/envs/meme/bin/' #'/home/jlwetzel/src/hmmer-3.3.1/src/'
+EXCLUDE_TEST = False   # True if want to exlude 1/2 of Chu proteins for testing .. N/A for ZF testing
+MWID = 6               # Number of base positions in the contact map; set for backward compatibility (6 for homeodomain; 5 for C2H2-ZFs)
+
+if DOMAIN_TYPE == 'zf-C2H2':
+    RIGHT_OLAP = 1     # Number of 3' bases in contact map overlapping with previous domain instance (if multi-domain) - 1 for zf-C2H2
+    ANCHOR_B1H = False     # Set to true to anchor alignment based on single-finger B1H data for ZFs (Najafabadi, 2015, Nat. Biotech.)
+    ANCHOR_FFS = True      # Set to true to anchor alignment based on fly factor survey for ZFs (Enuameh, 2013, Genome Res.)
+    DIVERSE_ZF_SET = ['bowl','CG31670','ken','ovo','pho','Sp1']  # Set to None to seed with random ZFs instead
+    ANCHOR_SUBSET_SZ = 5  # The number of examples to sample randomly for the anchor subset for ZFs
+else:
+    RIGHT_OLAP = 0     # No domain base overlap for single-domain proteins
+    ANCHOR_B1H = False
+    ANCHOR_FFS = False
+
+RAND_SEED = 382738375 if type(args.chain_num) == type(None) else args.chain_num   # Numpy random seed for used for manuscript results
+MAXITER = 50                                          # Maximum number of iterations per Markov chain (default 50)
+N_CHAINS = 250 if type(args.chain_num) == type(None) else 1                 # Number of Markov chains to use (default 250)
+INIT_ORACLE = False                                   # Deprecated ... was used to compare to previous Naive Bayes implementation
+SAMPLE = 100                                          # Integer to multiply PWM columns by when converting to counts (default 100)
+OBS_GRPS = 'grpIDcore'                                # Perform group updates based on identical DNA-contacting protein residues
+if EXCLUDE_TEST:
+    SEED_FILE = '../precomputedInputs/fixedStarts_homeodomains_noTest.txt' # Initial seeds based on structures
+else:
+    SEED_FILE = '../precomputedInputs/fixedStarts_TetR.txt'    # Initial seeds based on structures
+
+if ORIGINAL_INPUT_FORMAT:
+    # Set parameters for adjusting the model topology
+    # (i.e., the binarized contact matrix)
+    CORE_POS = 'useStructInfo'    # Uses the precomputed structural alignments
+    APOS_CUT = 'cutAApos_1.0_0.05'  # Controls AA contact threshold for binarization
+    EDGE_CUT = 'edgeCut_1.0_0.05'   # Controls AA contact threshold for binarization
+    MAX_EDGES_PER_BASE = None       # None means to just ignore this parameter
+    RESCALE_PWMS = True             # True if using PWM rescaling
+else:
+    PROT_SEQ_FILE = '../precomputedInputs/proteins_TetR.fa'  # Input protein sequence fasta file
+    PWM_INPUT_TABLE = '../precomputedInputs/pwmTab_TetR.txt'   # A table of PWMs corresponding to prots in PROT_SEQ_FILE
+    CONTACT_MAP = '../precomputedInputs/TetR_contactMap.txt'  # A contact map for the domain family
+    HMM_FILE = '../pfamHMMs/TetR.hmm'    # Location of hmm file
+    HMM_LEN = 47                             # Number of match states in HMM file
+    HMM_NAME = 'TetR_N'                    # A name for the HMM
+    HMM_OFFSET = 0                           # Used to offset HMM states to canonical numbering scheme for Homoedomains
+                                                # Set to zero to use default HMM match state numbers (0-indexed)
+    TEST_PROT_FILE = None                   # protein/PWM pairs from PROT_SEQ_FILE that are reserved for later testing    
+
+# Used by various functions - do not change these
+BASE = ['A','C','G','T']
+REV_COMPL = {'A':'T','C':'G','G':'C','T':'A'}
+AMINO = ['A','C','D','E','F','G','H','I','K','L',
+         'M','N','P','Q','R','S','T','V','W','Y']
+B2IND = {x: i for i, x in enumerate(BASE)}
+A2IND = {x: i for i, x in enumerate(AMINO)}
+IND2B = {i: x for i, x in enumerate(BASE)}
+IND2A = {i: x for i, x in enumerate(AMINO)}
+COMPL_BASE = {0:3, 1:2, 2:1, 3:0}
 
 ### This global is no longer necessary or used due to use of example structural
 ### alignment seeding.  However, it still exists in many function signatures ...
@@ -134,7 +136,6 @@ def readPDBcoords(fname, start = 0, stop = None, zeroInd = False,
         fin = open(fname, 'r')
     except IOError:
         return None
-    #print fname
     for i, line in enumerate(fin):
 
         # Are we at the end of the file?
@@ -160,7 +161,7 @@ def readPDBcoords(fname, start = 0, stop = None, zeroInd = False,
         # Convert to standard DNA code for nucleotides
         if mType == 'nuc' and skipRNA and len(res) == 1: # Ribonucleotide found
             fin.close()
-            print "Encountered non-deoxy base ... skip for now"
+            print("Encountered non-deoxy base ... skip for now")
             return None
         elif mType == 'nuc' and res[-1] == 'M': #Methylated base
             res = res[1]
@@ -490,8 +491,6 @@ def getHomeoboxData(dsets, maxMwid, aaPosList = [2,3,5,6,47,50,51,54,55],
     HMM_OFFSET = 2
 
     # Optionally, get the core positions via structural analysis
-    #print aposCut[-1]
-    #print [eval(x) for x in aposCut.split('_')[1:]]
     if aaPosList == 'useStructInfo':
         assert aposCut[-1] != 'X'
         cutBB, cutBase = [eval(x) for x in aposCut.split('_')[1:]]
@@ -500,8 +499,6 @@ def getHomeoboxData(dsets, maxMwid, aaPosList = [2,3,5,6,47,50,51,54,55],
         aaPosList = getAAposByStructInfo(wtFile, cutBB, cutBase)
 
     # Optionally, restrict edges based on structural info
-    #print edgeCut[-1]
-    #print [x for x in edgeCut.split('_')[1:]]
     if edgeCut[-1] != 'X':
         cutBB, cutBase = [eval(x) for x in edgeCut.split('_')[1:]]
         wtFile = '../structuralAlignmentFiles/' + \
@@ -568,8 +565,6 @@ def getHomeoboxData(dsets, maxMwid, aaPosList = [2,3,5,6,47,50,51,54,55],
 
             seqs[dset] = readFromFasta(CISBP_FASTA)
             pwms[dset] = getPWM(CISBP_PWM_SRC, tfnames, motifs)
-            #print 'PHOX2B' in seqs[dset]
-            #print 'PHOX2B' in pwms[dset]
             subsetDict(pwms[dset], set(seqs[dset].keys()))
             fstem = '/'.join(CISBP_FASTA.split('/')[:-1]) + \
                 '/homeodomains_cisbp'
@@ -603,14 +598,9 @@ def getHomeoboxData(dsets, maxMwid, aaPosList = [2,3,5,6,47,50,51,54,55],
                 motifs.append(mn)
             fin.close()
 
-            #print tfnames
-            #print tfnFull
+
             seqs[dset] = readFromFasta(BARRERA_FASTA)
-            #print tfnames
-            #print motifs
             pwms[dset] = getPWM_barrera(BARRERA_PWM_SRC,motifs,tfnFull)
-            #print len(seqs[dset].keys())
-            #print len(pwms[dset].keys())
             subsetDict(pwms[dset], set(seqs[dset].keys()))
             fstem = '/'.join(BARRERA_FASTA.split('/')[:-1]) + \
                 '/homeodomains_barreraMuts'
@@ -674,7 +664,7 @@ def assignObsGrps(core, by = 'grpIDcore'):
             grps[k] = [k]
     elif by == 'grpIDcore':
         for k in core.keys():
-            if not grps.has_key(core[k]):
+            if core[k] not in list(grps.keys()):
                 grps[core[k]] = [k]
             else:
                 grps[core[k]].append(k)
@@ -858,9 +848,9 @@ def formGLM_fullX(core, edges, uniqueProteins, obsGrps, numAAs = 19, domainOrder
                 nCores = len(core[p])/coreLen
                 # Add X vectors for domains in reverse order for ZFs
                 if domainOrder == -1:
-                    cRange = range(nCores-1,-1,-1)
+                    cRange = range(int(nCores-1),-1,-1)
                 else:
-                    cRange = range(nCores)
+                    cRange = range(int(nCores))
                 for c in cRange:
                     core_seq = core[p][coreLen*c:coreLen*(c+1)]
                     x = []
@@ -886,7 +876,7 @@ def makeCoefTable(model, edges_hmmPos, outfile):
     fout = open(outfile, 'w')
     fout.write('bpos\taapos\tbase\taa\tcoef\n')
 
-    print edges_hmmPos
+    print(edges_hmmPos)
     for j in range(MWID):
         coefs = model[j].coef_
         #print(coefs.shape)
@@ -933,7 +923,7 @@ def formGLM_testX(X, startInd, endInd, modelType = 'classifier'):
     if modelType == 'classifier':
         testX = {}
         for j in range(MWID):
-            testX[j] = X[j][startInd:(endInd+1),]
+            testX[j] = X[j][int(startInd):int(endInd+1),]
     return testX  
 
 
@@ -945,7 +935,7 @@ def formGLM_Y(keysToUse, nDoms):
     """
     Y = {}
     for j in range(MWID):
-        Y[j] = np.array([0,1,2,3] * np.sum([nDoms[k] for k in keysToUse]))
+        Y[j] = np.array([0,1,2,3] * int(np.sum([nDoms[k] for k in keysToUse])))
     return Y
 
 
@@ -958,7 +948,7 @@ def formGLM_trainW(pwms, uniqueProteins, nDoms, start, rev, modelType = 'classif
     :param pwms: a dictionary of {"protein": position weight matrix}
     :param uniqueProteins: an array of unique proteins
     :param S: a dictionary {"protein": starting position}
-    :param O: a dictionary {"protein": orientation \in {0,1}}
+    :param O: a dictionary {"protein": orientation in {0,1}}
     :return: W: a dictionary. Each base position j corresponds to an array of weights,
     every four numbers represent one protein's weights.
     """
@@ -972,15 +962,15 @@ def formGLM_trainW(pwms, uniqueProteins, nDoms, start, rev, modelType = 'classif
             pwm = pwms[protein]
         weights[protein] = {}
         # Allows arrayed multi-domain proteins with overlaps
-        for d in range(nDoms[protein]):
+        for d in range(int(nDoms[protein])):
             for j in range(MWID):
                 #print protein, start[protein], d, j, j+start[protein]+d*(MWID-RIGHT_OLAP), pwm[j+start[protein]+d*(MWID-RIGHT_OLAP)][:]
                 if d == 0:
-                    weights[protein][j] = pwm[j+start[protein]][:]
+                    weights[protein][j] = pwm[int(j+start[protein])][:]
                 else:
                     weights[protein][j] = \
                         np.concatenate((weights[protein][j],
-                                        pwm[j+start[protein]+d*(MWID-RIGHT_OLAP)][:]), axis = None)
+                                        pwm[int(j+start[protein]+d*(MWID-RIGHT_OLAP))][:]), axis = None)
         #print protein, nDoms[protein], len(weights[protein][0])
         # For single domain case only(above is more general)
         #for j in range(MWID):
@@ -1008,7 +998,7 @@ def formGLM_testW(pwms, index, uniqueProteins, start, rev):
     :param index: a scalar, index for hold out protein in the unique proteins
     :param uniqueProteins: an array of unique proteins
     :param start: a dictionary {"protein": starting position}
-    :param rev: a dictionary {"protein": orientation \in {0,1}}
+    :param rev: a dictionary {"protein": orientation in {0,1}}
     :return: W: a dictionary, each jth base position corresponds to an array of length 4
     weights for the hold out protein
     """
@@ -1035,8 +1025,7 @@ def createGLMModel(trainX, trainY, trainW):
     model = {}
     for j in range(MWID):
         #clf = LogisticRegression(fit_intercept=True, random_state=0, multi_class='multinomial', solver='newton-cg')
-        clf = LogisticRegression(fit_intercept=True, random_state=0, 
-                                 multi_class='multinomial', solver='newton-cg', 
+        clf = LogisticRegression(fit_intercept=True, random_state=0, solver='newton-cg', 
                                  C = 1e9)
         model[j] = clf.fit(trainX[j], trainY[j], sample_weight=trainW[j])
     return model
@@ -1086,14 +1075,14 @@ def sampleStartPosGLM(testX, uniqueProteins, index, nDoms, pwms, edges, model):
     lls = []
     for r in range(2):
         # All allowable starting positions for multidomain proteins
-        for s in range(len(pwm)-((mWid-RIGHT_OLAP)*nDoms[holdout]+RIGHT_OLAP) + 1):
+        for s in range(int(len(pwm)-((mWid-RIGHT_OLAP)*nDoms[holdout]+RIGHT_OLAP) + 1)):
             start_ho = {holdout:s}
             rev_ho = {holdout:r}
             testW = formGLM_trainW(pwms, [holdout], nDoms, start_ho, rev_ho)
             #print testX[0].shape, testW[0].shape
             testX_dom, testW_dom = {}, {}
             ll = 0
-            for i in range(nDoms[holdout]):
+            for i in range(int(nDoms[holdout])):
                 for j in range(mWid):
                     # Each domain in multidom protein contributes equally to likelihood
                     testX_dom[j] = testX[j][i*4:(i+1)*4,]
@@ -1186,8 +1175,8 @@ def gibbsSampleGLM(pwms, edges, uniqueProteins, obsGrps, fullX, grpInd, nDoms,
     nIters = 0
     if verbose:
         print("nIters: %d" %nIters)
-        print("\tstarts:", start.values()[:20])
-        print("\trevers:", rev.values()[:20])
+        print("\tstarts:", list(start.values())[:2])
+        print("\trevers:", list(rev.values())[:2])
 
     # Alternate between model construction and latent variable updates
     # until the latent variables cease to change
@@ -1244,7 +1233,7 @@ def gibbsSampleGLM(pwms, edges, uniqueProteins, obsGrps, fullX, grpInd, nDoms,
             nextInd = currInd + 4*nDoms[p]
             testX = formGLM_testX(fullX, currInd, nextInd-1)
             testW = formGLM_trainW(pwms, [p], nDoms, start, rev)
-            for i, ind in enumerate(range(currInd, nextInd, 4)):
+            for i, ind in enumerate(range(int(currInd), int(nextInd), 4)):
                 testX_dom = formGLM_testX(fullX, ind, ind+4-1)
                 testW_dom = {}
                 for j in range(MWID):
@@ -1255,8 +1244,8 @@ def gibbsSampleGLM(pwms, edges, uniqueProteins, obsGrps, fullX, grpInd, nDoms,
 
         if verbose:
             print("nIters: %d" %nIters)
-            print("--starts:", start.values()[:20])
-            print("--revers:", rev.values()[:20])
+            print("--starts:", list(start.values())[:2])
+            print("--revers:", list(rev.values())[:2])
             print("--loglik", ll)
             print("--valuesChanged: ", valuesChanged)
 
@@ -1300,7 +1289,7 @@ def runGibbs(pwms, edges, uniqueProteins, obsGrps, fullX, grpInd, nDoms,
 
     #'''
     ### Runs multiple chains in parallel
-    ncpus = multiprocessing.cpu_count()-1
+    ncpus = int(multiprocessing.cpu_count()-1)
     maxiter = MAXITER
     print("we will run", maxiter, " iterations.")
     p = multiprocessing.Pool(ncpus)
@@ -1339,7 +1328,6 @@ def getFixedStarts_fromStructures(pwms, edges_hmmPos, core,
         for aapos in edges_hmmPos[bpos]:
             corepos.add(aapos)
     corepos = sorted(list(corepos))
-    print corepos
 
     # Read in the match state amino acids from the structures
     fin = open(structMatchStateFile, 'r')
@@ -1353,7 +1341,6 @@ def getFixedStarts_fromStructures(pwms, edges_hmmPos, core,
     # Subset them to the core positions
     structCores = {}
     for m in matches.keys():
-        #print matches[m][49]
         s = ''
         for pos in corepos:
             s += matches[m][pos-2]
@@ -1443,8 +1430,7 @@ def getFixedStarts_fromStructures(pwms, edges_hmmPos, core,
         bestScore, bestExp, bestShift, bestOri = -6.0, '', 0, 0
         x = structMats[cs]
         for p in isect_pwms[cs]:
-            #print x
-            #print pwms[p]
+
             score, shift, ori = comp_matrices(x, pwms[p], minWidthM2 = 6)
             if score > bestScore:
                 bestScore, bestShift, bestOri = score, shift, ori
@@ -1455,19 +1441,16 @@ def getFixedStarts_fromStructures(pwms, edges_hmmPos, core,
             rev = 0
         if bestScore >= 5:
             if verbose:
-                print cs, bestScore, bestExp, bindSite[cs], bestShift, rev
+                print(cs, bestScore, bestExp, bindSite[cs], bestShift, rev)
             bestAli[cs] = {'pwm': bestExp, 'score': bestScore, 'shift': bestShift, 'rev': rev}
         bestAli_all[cs] = {'pwm': bestExp, 'score': bestScore, 'shift': bestShift, 'rev': rev}
 
-    print len(isect_structs.keys()), len(bestAli.keys())
+    print(len(isect_structs.keys()), len(bestAli.keys()))
     fixedStarts = {}
     for cs in bestAli.keys():
         fixedStarts[bestAli[cs]['pwm']] = \
             {'start': -bestAli[cs]['shift'], 'rev': bestAli[cs]['rev']}
-    #print core.values(), len(core.values())
-    #print structCores.values(), len(structCores.values())
-    #print corepos
-    #print set(structCores.values()) & set(core.values())
+
 
     if outfile is not None:
         fout = open(outfile,'w')
@@ -1487,6 +1470,11 @@ def readSeedAlignment(infile, include = set()):
             fixedStarts[l[0]] = {'start': int(l[1]), 'rev': int(l[2])}
     fin.close()
     return fixedStarts
+
+def idgen(size=10, chars=string.ascii_letters + string.digits):
+    """Generates a random string (for use as a temporary file) of size n and
+    from uppercase, lowercase ASCII letters and numbers."""
+    return ''.join(random.choice(chars) for x in range(size))
 
 def getPrecomputedInputs():
     ##############################################
@@ -1525,9 +1513,10 @@ def getPrecomputedInputs():
 
     # Convert to "core" contacting amino acids only
     corePos = [x - HMM_OFFSET for x in aaPosList]
-    fasta = './tmp/seq_fasta_hasPWM.fa'
-    writeToFasta(prot,'./tmp/seq_fasta_hasPWM.fa')
-    hmmerout, matchTab = './tmp/hasPWM.hmmer3.out.txt', './tmp/hasPWM.matchTab.txt'
+    tmp_id = idgen()
+    fasta = f'./tmp/{tmp_id}_seq_fasta_hasPWM.fa'
+    writeToFasta(prot,fasta)
+    hmmerout, matchTab = f'./tmp/{tmp_id}_hasPWM.hmmer3.out.txt', f'./tmp/{tmp_id}_hasPWM.matchTab.txt'
     runhmmer3(hmmerout, HMM_FILE, fasta, HMM_NAME, getdescs(fasta), 
               hmmerDir = HMMER_HOME)
     core, full, trunc = \
@@ -1591,7 +1580,7 @@ def getProteinInfo_zfC2H2_FFS(infile):
     for line in fin:
         l = line.strip().split()
         pname, coreSeq = l[0], l[3]
-        if core.has_key(pname):
+        if pname in list(core.keys()):
             core[pname] += coreSeq
         else:
             core[pname] = coreSeq
@@ -1664,7 +1653,7 @@ def getPrecomputedInputs_zfC2H2(rescalePWMs = False, ffsOnly = False, includeB1H
         for line in fin:
             l = line.strip().split()
             pname, coreSeq = l[0], l[7]
-            if core.has_key(pname):
+            if pname in list(core.keys()):
                 core[pname] += coreSeq
             else:
                 core[pname] = coreSeq
@@ -1731,12 +1720,13 @@ def main():
             pwms, core, edges, edges_hmmPos, aaPosList = \
                 getPrecomputedInputs_zfC2H2(rescalePWMs = False, ffsOnly = False,
                                             includeB1H = False)
-    print edges
-    print edges_hmmPos
+        else:
+            pwms, core, full, edges, edges_hmmPos, aaPosList, testProts = getPrecomputedInputs()
+
+    print(edges)
+    print(edges_hmmPos)
     mWid = len(edges.keys())
     assert MWID == mWid
-
-    #print sorted(pwms.keys())
 
     """
     # Output directories used in homedomain portion of manuscript
@@ -1759,14 +1749,15 @@ def main():
 
     ## DEPRECATED but leaving for now ...
     trSet = 'cisbp'
-    orientKey = ORIENT[trSet].keys()[0]
+    orientKey = list(ORIENT[trSet].keys())[0]
     orient = ORIENT[trSet][orientKey]
     ###
 
     # Compute number of domains in each unique protein
     # and remove if the PWM is too short for the number of domains
     nDoms = {}
-    for p in core.keys():
+    print(core)
+    for p in list(core.keys()):
         nDoms[p] = len(core[p])/len(aaPosList)
         if len(pwms[p]) < (mWid-RIGHT_OLAP)*nDoms[p]+RIGHT_OLAP:# or nDoms[p] < 2:
             #print p, core[p], nDoms[p], len(pwms[p])
@@ -1784,7 +1775,7 @@ def main():
         knownStarts_ffs = readSeedAlignment(SEED_FILE, include = pwms.keys())
         # Remove examples where the known/stated fixed starting position
         # would make the pwm too short for the number of arrays annotated as binding
-        for p in knownStarts_ffs.keys():
+        for p in list(knownStarts_ffs.keys()):
             if len(pwms[p]) < knownStarts_ffs[p]['start']+(mWid-RIGHT_OLAP)*nDoms[p]+RIGHT_OLAP:
                 #print p, core[p], nDoms[p], len(pwms[p])
                 del nDoms[p]
@@ -1794,7 +1785,7 @@ def main():
         if ANCHOR_B1H:
             # Anchor based on the single-domain B1H data
             fixedStarts = {}
-            for p in core.keys():
+            for p in list(core.keys()):
                 if p[:4] == 'B1H.':
                     fixedStarts[p] = {'start': 0, 'rev': 0}
         elif ANCHOR_FFS:
@@ -1814,10 +1805,11 @@ def main():
             #print fixedStarts
             #print [core[k] for k in fixedStarts.keys()]
             #print [nDoms[k] for k in fixedStarts.keys()]
-
+    else:
+        fixedStarts = readSeedAlignment(SEED_FILE, include = pwms.keys())
 
     #"""
-    #print("number of proteins used", len(core.keys()))
+    print("number of proteins used", len(core.keys()))
     # Assign cores to similarity groups
     obsGrps = assignObsGrps(core, by = OBS_GRPS)
     with open(dir+'/obsGrpTab.txt', 'w') as fout:
@@ -1843,9 +1835,9 @@ def main():
     fullX, grpInd = formGLM_fullX(core, edges, uniqueProteins, obsGrps, domainOrder = domainOrder)
     #print fullX[0][0:5,:]
     for j in fullX.keys():
-        print fullX[j].shape
-    print len(grpInd)
-    print aaPosList
+        print(fullX[j].shape)
+    print(len(grpInd))
+    print(aaPosList)
 
     #Sanity checks and setting up correct fixed unique protein ordering 
     for g in obsGrps.keys():
@@ -1853,11 +1845,13 @@ def main():
     uprots = []
     for grp in obsGrps.keys():
         uprots += obsGrps[grp]
+    print([i for i in uprots if i not in uniqueProteins])
+    print([i for i in uniqueProteins if i not in uprots])
     assert len(uprots) == len(uniqueProteins)
     # So that uniqueProteins is in the same order as obsGrps keys
     uniqueProteins = uprots
     #print(len(fixedStarts))
-    print fixedStarts
+    print(fixedStarts)
     
     print("We are using %d proteins in the gibbs sampling." %len(uniqueProteins))
 
@@ -1865,7 +1859,7 @@ def main():
         print("Running %d markov chains ..." %N_CHAINS)
         startTime = time.time()
         res = runGibbs(pwms, edges, uniqueProteins, obsGrps, fullX, grpInd, nDoms,
-                       verbose = False, kSamps = N_CHAINS, orientKey = orientKey, 
+                       verbose = True, kSamps = N_CHAINS, orientKey = orientKey, 
                        orient = orient, fixedStarts = fixedStarts)
         print("Ran in %.2f seconds" %(time.time()-startTime))
         ll = [x['ll'] for x in res]

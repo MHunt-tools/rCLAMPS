@@ -32,7 +32,7 @@ def information_content(column): #compute information content of the column
             try:
                 E -= column[j] * numpy.log2(column[j])
             except RuntimeWarning:
-                print column[j]
+                print(column[j])
     ic = 2 - E
     return ic
 

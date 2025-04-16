@@ -8,6 +8,7 @@
 
 from predictionExample import *
 OUTFILE = '../coefficientExplore/'+DOMAIN_TYPE+'/coefTable.txt'
+os.makedirs('../coefficientExplore/'+DOMAIN_TYPE, exist_ok=True)
 
 def makeCoefTable(model, edges_hmmPos, outfile):
     # Make a table of the model coefficients for exploration

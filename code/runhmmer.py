@@ -49,6 +49,9 @@ def runhmmer3(outfile, hmmfile, protfile, hmmname, descs, hmmerDir = None):
     # [Kaiqian] lrwxr-xr-x  1 kaiqianz  wheel  33 Mar 17 09:39 /usr/local/bin/hmmsearch -> ../Cellar/hmmer/3.3/bin/hmmsearch
 
     #print syscall
+    import os, sys
+    print(os.getcwd())
+    print(f'syscall: {syscall}')
     os.system(syscall)
     #os.system('cp %s %s' %(outfile,outfile+'.orig'))
     parsehmmer3(outfile, hmmname, descs)
@@ -123,14 +126,12 @@ def parsehmmer232(filename, hmmname, descs):
 def parsehmmer3(filename, hmmname, descs):
   """Parses output from a HMMER 3 output file into a readable table format
   with all necessary information."""
-
-  tmpfile = '/tmp/' + idgen() + '.txt'
+  import os, sys
+  tmpfile = os.path.abspath('./tmp/' + idgen() + '.txt')
   OUTFILE = open(tmpfile, 'w')
 
   reach = False # Have we reached a match yet?
   hmmstart,protID = '',''
-
-  #print descs
   for l in open(filename):
     i = l.strip().split()
     if len(i) < 1: continue # No pertinent information here
@@ -170,11 +171,11 @@ def parsehmmer3(filename, hmmname, descs):
 
   #print tmpfile
   # Overwrite the original HMMER output:
-  NOUT = open(filename,'w')
-  NOUT.write('\t'.join(['#Target','E-value','BitScore','HMM_Start','HMM_End','TargetStart','TargetEnd','HMM_Seq','Ali_Seq','Description'])+'\n')
-  with open(tmpfile) as x: map(NOUT.write, sorted(x.readlines()))
-  NOUT.close()
-  os.system('rm '+tmpfile)
+  with open(filename,'w') as NOUT:
+    with open(tmpfile) as x: 
+        NOUT.writelines(['\t'.join(['#Target','E-value','BitScore','HMM_Start','HMM_End','TargetStart','TargetEnd','HMM_Seq','Ali_Seq','Description'])+'\n'] +
+            sorted(x.readlines()))
+#   os.system('rm '+tmpfile)
 
 #------------------------------------------------------------------------------#
 #------------------------------ Helper Functions ------------------------------#

@@ -8,10 +8,12 @@ if DOMAIN_TYPE == 'homeodomain':
     MODEL_DIR = '../my_results/allHomeodomainProts/'   # Directory containing the rCLAMPS output for homeodomains
 elif DOMAIN_TYPE == 'zf-C2H2':
     MODEL_DIR = '../my_results/zf-C2H2_250_50_seedFFSdiverse6/'   # Directory containing the rCLAMPS output for zf-C2H2s
+elif DOMAIN_TYPE == 'TetR':
+    MODEL_DIR = '../my_results/tetRProts117/'   # Directory containing the rCLAMPS output for the best TetR
 
 # Directory containing a fasta of homeomdomain proteins to predict specificities for
-PROTEIN_FILE = '../examplePredictions/'+DOMAIN_TYPE+'/predictionExamples.fa'  
-OUTPUT_DIR = '../examplePredictions/'+DOMAIN_TYPE+'/'
+PROTEIN_FILE = f'../examplePredictions/{DOMAIN_TYPE}/TetR_predictions.fa'  
+OUTPUT_DIR = f'../examplePredictions/{DOMAIN_TYPE}/'
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 
@@ -26,23 +28,25 @@ def createFinalModel(domainType):
         pwms, core, full, edges, edges_hmmPos, aaPosList, testProts = getPrecomputedInputs()
     elif domainType == 'zf-C2H2':
         pwms, core, edges, edges_hmmPos, aaPosList = getPrecomputedInputs_zfC2H2()
+    else:
+        pwms, core, full, edges, edges_hmmPos, aaPosList, testProts = getPrecomputedInputs()
 
-    #print edges_hmmPos
+    #print(edges_hmmPos)
 
     # Retrieve the optimal offsets/orientations found previously by rCLAMPS
     filename = MODEL_DIR+'result.pickle'
-    with open(filename) as f:
+    with open(filename, 'rb') as f:
         res = pickle.load(f)
     score = [x['ll'] for x in res]
     opt = np.argmax(score)
     start = [x['start'] for x in res][opt]
     rev = [x['rev'] for x in res][opt]
-    [subsetDict(x, start.keys()) for x in [pwms, core]]
+    [subsetDict(x, list(start.keys())) for x in [pwms, core]]
 
     # Assign to distinct observation groups
     obsGrps = assignObsGrps(core, by = OBS_GRPS)
     uprots = []
-    for grp in obsGrps.keys():
+    for grp in list(obsGrps.keys()):
         uprots += obsGrps[grp]
     uniqueProteins = uprots  
 
@@ -63,10 +67,10 @@ def main():
         os.makedirs('./tmp')
 
     # Create the model object and get the list of relevant match states
-    print "Creating the model object ..."
+    print("Creating the model object ...")
     model, aaPosList, edges = createFinalModel(DOMAIN_TYPE)
 
-    print "Converting fasta proteins to X vectors ..."
+    print("Converting fasta proteins to X vectors ...")
     # Read in proteins you are interested in predicting specificities for 
     # and create appropriate X matrices
     if DOMAIN_TYPE == 'homeodomain':
@@ -75,12 +79,15 @@ def main():
     elif DOMAIN_TYPE == 'zf-C2H2':
         fullX, uniqueProteins, obsGrps, grpInd, nDoms = \
             getFullX_fromFile_zfC2H2(PROTEIN_FILE, aaPosList, edges)
+    if DOMAIN_TYPE == 'TetR':
+        fullX, uniqueProteins, obsGrps, grpInd = \
+            getFullX_fromFasta_HMMer3(PROTEIN_FILE, aaPosList, edges)
 
-    print "Making PWM predictions ..."
+    print("Making PWM predictions ...")
     # Make a prediction for each protein with a distinct combination 
     # of base-contatcing residues and store
     pred_pwms = {}
-    for k, coreSeq in enumerate(grpInd.keys()):
+    for k, coreSeq in enumerate(list(grpInd.keys())):
         startInd_ho, endIndex_ho = grpInd[coreSeq]
         testProteins = []
         for prot in uniqueProteins:
@@ -88,7 +95,7 @@ def main():
                 testProteins += [prot]
         #print testProteins, coreSeq
         testX = formGLM_testX(fullX, startInd_ho, startInd_ho + 4)
-        if DOMAIN_TYPE == 'homeodomain':
+        if DOMAIN_TYPE == 'homeodomain' or DOMAIN_TYPE == 'TetR':
             pwm = []
             for j in range(MWID):
                 prediction = model[j].predict_proba(testX[j])[0].tolist()
@@ -106,7 +113,7 @@ def main():
     makePWMtab(pred_pwms,OUTPUT_DIR+'/predicted_pwms.txt')
 
     if MAKE_LOGOS:
-        print "Generating logos for each prediciton ..."
+        print("Generating logos for each prediciton ...")
         makeLogos(pred_pwms, OUTPUT_DIR + '/predicted_logos/')
 
 if __name__ == '__main__':

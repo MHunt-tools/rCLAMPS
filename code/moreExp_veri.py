@@ -38,7 +38,7 @@ def getPWM(fpath, tfs, motifs, verbose = False, ID_field = "TF Name"):
     while line != "":
         lineArr = line.split("\t")
         if verbose:
-            print lineArr
+            print(lineArr)
         if lineArr[0] == ID_field:
             tf = lineArr[1].rstrip()
         if lineArr[0] == "Pos":
@@ -47,7 +47,7 @@ def getPWM(fpath, tfs, motifs, verbose = False, ID_field = "TF Name"):
             motif = lineArr[1].rstrip()
         if len(lineArr) == 5 and lineArr[0] != "Pos":
             lineArr = np.array(lineArr)
-            onevec_list = lineArr.astype(np.float)[1:5].tolist()
+            onevec_list = lineArr.astype(float)[1:5].tolist()
             pwm.append(onevec_list)
         if lineArr[0] == '\n' and tf in tfs and motif in motifs:
             pwms[tf] = np.array(pwm)
@@ -66,8 +66,6 @@ def getPWM_barrera(fpath, motifs, tfnFull, verbose = False):
     while line != "":
         line = fin.readline()
         lineArr = line.split("\t")
-        #if verbose:
-        #    print lineArr
         if lineArr[0] == "TF Name":
             tf = lineArr[1].rstrip()
         if lineArr[0] == "Pos":
@@ -76,7 +74,7 @@ def getPWM_barrera(fpath, motifs, tfnFull, verbose = False):
             motif = lineArr[1].rstrip()
         if len(lineArr) == 5 and lineArr[0] != "Pos":
             lineArr = np.array(lineArr)
-            onevec_list = lineArr.astype(np.float)[1:5].tolist()
+            onevec_list = lineArr.astype(float)[1:5].tolist()
             pwm.append(onevec_list)
         if lineArr[0] == '\n' and motif in motifs:
             pwms[tfnFull[motifs.index(motif)]] = np.array(pwm)
